@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>UWBe Impact Atlas - Climate Action</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+<style>
+
+body{margin:0;font-family:Segoe UI,Arial;background:#f4f7fb;}
+
+#header{
+position:relative;
+display:flex;
+align-items:center;
+justify-content:center;
+padding:10px;
+background:white;
+box-shadow:0 2px 6px rgba(0,0,0,.1);
+}
+
+#logo{
+position:absolute;
+left:10px;
+height:70px;
+}
+
+#aboutLink{
+position:absolute;
+right:15px;
+top:25px;
+font-size:14px;
+text-decoration:none;
+color:#2563eb;
+font-weight:600;
+}
+
+#titleBlock{text-align:center;}
+
+#container{
+display:flex;
+height:calc(100vh - 120px);
+}
+
+#sidebar{
+width:360px;
+background:#ffffff;
+padding:12px;
+overflow:auto;
+border-right:1px solid #e5e7eb
+}
+
+#map{flex:1}
+
+.card{
+background:#ffffff;
+padding:10px;
+margin-bottom:10px;
+border-radius:8px;
+border:1px solid #e5e7eb
+}
+
+select{
+width:100%;
+padding:6px;
+margin:4px 0;
+border-radius:6px
+}
+
+.mapboxgl-popup-content{
+border-radius:12px;
+padding:0;
+overflow:hidden;
+}
+
+.popup-header{
+background:#2563eb;
+color:white;
+padding:8px;
+font-weight:bold;
+}
+
+.popup-body{
+padding:8px;
+font-size:12px;
+}
+
+/* LEGEND */
+
+#legendBox{
+position:absolute;
+bottom:20px;
+right:20px;
+background:white;
+border-radius:10px;
+box-shadow:0 4px 10px rgba(0,0,0,.15);
+padding:10px;
+font-size:12px;
+width:170px;
+}
+
+#legendToggle{
+width:100%;
+background:#2563eb;
+color:white;
+border:none;
+padding:6px;
+border-radius:6px;
+cursor:pointer;
+font-weight:600;
+}
+
+#legendItems{
+margin-top:8px;
+display:none;
+max-height:200px;
+overflow-y:auto;
+}
+
+.legend-item{
+display:flex;
+align-items:center;
+margin:4px 0;
+}
+
+.legend-color{
+width:12px;
+height:12px;
+border-radius:50%;
+margin-right:6px;
+flex-shrink:0;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="header">
+<img src="uwbe_logo.png" id="logo">
+
+<a id="aboutLink" href="https://www.uwbengaluru.org/" target="_blank">About</a>
+
+<div id="titleBlock">
+<h3 style="margin:0">UWBe Impact Atlas</h3>
+<small>Climate Action: Wake The Lake // Afforestation // Mangrove Restoration</small>
+</div>
+</div>
+
+<div id="container">
+
+<div id="sidebar">
+
+<div class="card">
+
+<b>Filters</b>
+
+<select id="programFilter"></select>
+<select id="donorFilter"></select>
+<select id="fyFilter"></select>
+<select id="stateFilter"></select>
+<select id="districtFilter"></select>
+
+</div>
+
+<div class="card">
+
+<b>Statistics</b>
+
+<div id="statSites"></div>
+<div id="statAcres"></div>
+<div id="statBeneficiaries"></div>
+
+</div>
+
+<div class="card">
+
+<b>Environmental Impact</b>
+<div id="impactText">Select a program to see its environmental impact.</div>
+
+</div>
+
+</div>
+
+<div id="map"></div>
+
+</div>
+
+<div id="legendBox">
+
+<button id="legendToggle">Donor Legend ▼</button>
+
+<div id="legendItems"></div>
+
+</div>
+
+<script>
+
+mapboxgl.accessToken='pk.eyJ1IjoiaW1hcHN1d2IiLCJhIjoiY21rejk0dXlkMGVhNzNkczhybWNjd3hpZiJ9.As1XGaLQCR0ShRcpUEULyA';
+
+const map=new mapboxgl.Map({
+container:'map',
+style:'mapbox://styles/mapbox/streets-v12',
+center:[78.96,20.59],
+zoom:5
+});
+
+let allFeatures=[],filtered=[];
+let donorColors={};
+
+const programImpact={
+"Wake The Lake":"Lake rejuvenation improves groundwater recharge, restores aquatic biodiversity and reduces flooding.",
+"Afforestation":"Afforestation increases carbon capture, restores degraded land and improves biodiversity.",
+"Mangroves":"Mangroves protect coastlines, store carbon and support fisheries.",
+"Nala Bandh":"Nala bandh structures slow water runoff, recharge groundwater and support agriculture.",
+"Kalyani":"Kalyani restoration improves local water availability and preserves traditional water systems."
+};
+
+const programFilter=document.getElementById("programFilter");
+const donorFilter=document.getElementById("donorFilter");
+const fyFilter=document.getElementById("fyFilter");
+const stateFilter=document.getElementById("stateFilter");
+const districtFilter=document.getElementById("districtFilter");
+
+const statSites=document.getElementById("statSites");
+const statAcres=document.getElementById("statAcres");
+const statBeneficiaries=document.getElementById("statBeneficiaries");
+const impactText=document.getElementById("impactText");
+
+map.on("load",()=>loadCSV());
+
+function loadCSV(){
+
+Papa.parse("data.csv",{
+download:true,
+header:true,
+skipEmptyLines:true,
+complete:r=>processData(r.data)
+});
+
+}
+
+function processData(rows){
+
+allFeatures = rows.filter(r=>r.Latitude && r.Longitude)
+
+.map(r=>({
+
+type:"Feature",
+
+geometry:{
+type:"Point",
+coordinates:[+r.Longitude,+r.Latitude]
+},
+
+properties:{
+
+Program:r["program name"],
+FY:r["FY"],
+Donor:r["Donor"],
+State:r["State"],
+District:r["District"],
+Site:r["Lake_Forest_Mangrove_name"],
+LocationName:r["Location name"],
+
+Acres:+r["Acres"]||0,
+Beneficiaries:+r["Total benificiaries (GP population)"]||0,
+
+Saplings:r["No. of saplings Planted"],
+Plantation:r["Traditional plantation done?"],
+Fish:r["No.of Fish seedlings released"],
+
+Location:r["Location link"]
+
+}
+
+}));
+
+generateDonorColors();
+setupFilters();
+buildLegend();
+applyFilters();
+
+}
+
+function generateDonorColors(){
+
+const donors=[...new Set(allFeatures.map(f=>f.properties.Donor))];
+
+donors.forEach((d,i)=>{
+
+const hue=Math.floor((360/donors.length)*i);
+donorColors[d]=`hsl(${hue},70%,50%)`;
+
+});
+
+}
+
+function uniq(a){return [...new Set(a)].filter(Boolean)}
+
+function fill(sel,vals,label){
+
+sel.innerHTML=`<option value="">${label}</option>`;
+vals.forEach(v=>sel.innerHTML+=`<option value="${v}">${v}</option>`);
+
+}
+
+function setupFilters(){
+
+fill(programFilter,uniq(allFeatures.map(f=>f.properties.Program)),"All Programs");
+
+updateCascadeFilters();
+
+programFilter.onchange=applyFilters;
+donorFilter.onchange=applyFilters;
+fyFilter.onchange=applyFilters;
+stateFilter.onchange=applyFilters;
+districtFilter.onchange=applyFilters;
+
+}
+
+function updateCascadeFilters(){
+
+const data=allFeatures;
+
+fill(donorFilter,uniq(data.map(f=>f.properties.Donor)),"All Donors");
+fill(fyFilter,uniq(data.map(f=>f.properties.FY)),"All Years");
+fill(stateFilter,uniq(data.map(f=>f.properties.State)),"All States");
+fill(districtFilter,uniq(data.map(f=>f.properties.District)),"All Districts");
+
+}
+
+function buildLegend(){
+
+const legend=document.getElementById("legendItems");
+const toggle=document.getElementById("legendToggle");
+
+legend.innerHTML="";
+
+const donors=Object.keys(donorColors).sort();
+
+donors.forEach(d=>{
+
+legend.innerHTML+=`
+<div class="legend-item">
+<div class="legend-color" style="background:${donorColors[d]}"></div>
+${d}
+</div>
+`;
+
+});
+
+toggle.onclick=()=>{
+
+if(legend.style.display==="block"){
+legend.style.display="none";
+toggle.innerText="Donor Legend ▼";
+}else{
+legend.style.display="block";
+toggle.innerText="Donor Legend ▲";
+}
+
+};
+
+}
+
+function applyFilters(){
+
+const program = programFilter.value;
+const donor = donorFilter.value;
+const fy = fyFilter.value;
+const state = stateFilter.value;
+const district = districtFilter.value;
+
+filtered = allFeatures.filter(f=>{
+
+return (!program || f.properties.Program===program) &&
+(!donor || f.properties.Donor===donor) &&
+(!fy || f.properties.FY===fy) &&
+(!state || f.properties.State===state) &&
+(!district || f.properties.District===district);
+
+});
+
+fill(donorFilter,uniq(filtered.map(f=>f.properties.Donor)),"All Donors");
+fill(fyFilter,uniq(filtered.map(f=>f.properties.FY)),"All Years");
+fill(stateFilter,uniq(filtered.map(f=>f.properties.State)),"All States");
+fill(districtFilter,uniq(filtered.map(f=>f.properties.District)),"All Districts");
+
+programFilter.value = program;
+donorFilter.value = donor;
+fyFilter.value = fy;
+stateFilter.value = state;
+districtFilter.value = district;
+
+updateStats();
+updateImpact(program);
+drawMap();
+
+}
+
+function updateImpact(program){
+
+if(programImpact[program]) impactText.innerText=programImpact[program];
+else impactText.innerText="Select a program to see its environmental impact.";
+
+}
+
+function updateStats(){
+
+statSites.innerHTML=`🌿 Sites: <b>${filtered.length}</b>`;
+statAcres.innerHTML=`🌾 Acres Restored: <b>${filtered.reduce((s,f)=>s+f.properties.Acres,0)}</b>`;
+statBeneficiaries.innerHTML=`👨‍👩‍👧‍👦 Beneficiaries: <b>${filtered.reduce((s,f)=>s+f.properties.Beneficiaries,0)}</b>`;
+
+}
+
+function drawMap(){
+
+const geojson={type:"FeatureCollection",features:filtered};
+
+if(map.getSource("sites")){
+map.getSource("sites").setData(geojson);
+}
+
+else{
+
+map.addSource("sites",{type:"geojson",data:geojson});
+
+map.addLayer({
+id:"points",
+type:"circle",
+source:"sites",
+paint:{
+"circle-radius":7,
+"circle-color":[
+"match",
+["get","Donor"],
+...Object.entries(donorColors).flat(),
+"#888"
+]
+}
+});
+
+map.on("click","points",e=>{
+
+const p=e.features[0].properties;
+
+new mapboxgl.Popup()
+.setLngLat(e.lngLat)
+.setHTML(`
+
+<div>
+
+<div class="popup-header">${p.LocationName}</div>
+
+<div class="popup-body">
+
+📊 Program: ${p.Program}<br>
+🏢 Donor: ${p.Donor}<br>
+📅 FY: ${p.FY}<br>
+
+📍 ${p.District}, ${p.State}<br><br>
+
+🌾 Acres: ${p.Acres}<br>
+👨‍👩‍👧‍👦 Beneficiaries: ${p.Beneficiaries}<br>
+
+🌱 Saplings planted: ${p.Saplings}<br>
+🌿 Traditional plantation: ${p.Plantation}<br>
+🐟 Fish seedlings: ${p.Fish}<br><br>
+
+<a href="${p.Location}" target="_blank">📍 Open Location</a>
+
+</div>
+
+</div>
+
+`).addTo(map);
+
+});
+
+}
+
+if(filtered.length>1){
+
+const bounds=new mapboxgl.LngLatBounds();
+filtered.forEach(f=>bounds.extend(f.geometry.coordinates));
+map.fitBounds(bounds,{padding:80});
+
+}else{
+
+map.flyTo({center:[78.96,20.59],zoom:5});
+
+}
+
+}
+
+</script>
+
+</body>
+</html>
