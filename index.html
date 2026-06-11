@@ -231,41 +231,8 @@ const statAcres=document.getElementById("statAcres");
 const statBeneficiaries=document.getElementById("statBeneficiaries");
 const impactText=document.getElementById("impactText");
 
+map.on("load",()=>loadCSV());
 
-map.on("load", () => {
-
-    // Load CSV points
-    loadCSV();
-
-    // LOAD LAKE GEOJSON
-    map.addSource("lakes", {
-        type: "geojson",
-        data: "lakes.geojson"
-    });
-
-    // Draw polygon
-    map.addLayer({
-        id: "lakes-fill",
-        type: "fill",
-        source: "lakes",
-        paint: {
-            "fill-color": "#3b82f6",
-            "fill-opacity": 0.4
-        }
-    });
-
-    // Outline
-    map.addLayer({
-        id: "lakes-outline",
-        type: "line",
-        source: "lakes",
-        paint: {
-            "line-color": "#1d4ed8",
-            "line-width": 2
-        }
-    });
-
-});
 function loadCSV(){
 
 Papa.parse("data.csv",{
